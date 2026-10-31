@@ -145,3 +145,41 @@ def value_by_outcome(eng, path):
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def decision_rules_grid(rules, path):
+    """Small multiples: mean xPV by level of each situational factor."""
+    factors = list(dict.fromkeys(rules.factor))
+    n = len(factors)
+    cols = 3
+    rows = int(np.ceil(n / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(14, 3.6 * rows))
+    for ax, f in zip(axes.ravel(), factors):
+        d = rules[rules.factor == f]
+        vals = d.mean_xpv * 100
+        labels = [f"{lv.replace('_', ' ')} (n={nn})" for lv, nn in zip(d.level, d.n)]
+        ax.barh(labels, vals, color=["#3b6ea5" if v >= 0 else "#c0392b" for v in vals])
+        ax.axvline(0, color="k", lw=0.8)
+        ax.set_title(f.replace("_", " "))
+        ax.tick_params(labelsize=8)
+    for ax in axes.ravel()[n:]:
+        ax.axis("off")
+    fig.suptitle("When is pressing a good decision? Mean expected press value (xPV x100) by situation", y=1.0)
+    fig.tight_layout()
+    fig.savefig(path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+def decision_map(p, length, width, path):
+    """Mean xPV by where the press happens (pressing team defends the left goal)."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    pitch = Pitch(pitch_type="skillcorner", pitch_length=length, pitch_width=width, line_color="#555")
+    pitch.draw(ax=ax)
+    stat = pitch.bin_statistic(p.x_start, p.y_start, p.xPV * 100, statistic="mean", bins=(12, 8))
+    cnt = pitch.bin_statistic(p.x_start, p.y_start, statistic="count", bins=(12, 8))
+    stat["statistic"] = np.where(cnt["statistic"] >= 40, stat["statistic"], np.nan)
+    hm = pitch.heatmap(stat, ax=ax, cmap="RdBu", vmin=-3, vmax=3, edgecolors="white")
+    fig.colorbar(hm, ax=ax, shrink=0.8, label="Mean xPV (x100); bins with < 40 presses hidden")
+    ax.set_title("Where pressing is a good decision (pressing team defends the left goal)")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)

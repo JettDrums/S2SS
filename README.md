@@ -18,6 +18,7 @@ pip install -r requirements.txt
 python scripts/fetch_opendata.py           # ~1.8 GB into data/opendata (use --no-tracking for events only)
 python scripts/run_pipeline.py             # v0 descriptive tables + figures into outputs/
 python scripts/run_value_model.py          # learned press value model into outputs/value/
+python scripts/run_decision_analysis.py    # decision rules, reliability, rankings into outputs/value/decisions/
 ```
 
 Challenge data (once credentials arrive):
@@ -28,6 +29,7 @@ python scripts/fetch_skillcorner_api.py --list-editions
 python scripts/fetch_skillcorner_api.py --edition <NWSL_2025_ID> --edition <FAWSL_2024_25_ID> --limit 2   # test first
 python scripts/run_pipeline.py --data-dir data/challenge
 python scripts/run_value_model.py --data-dir data/challenge
+python scripts/run_decision_analysis.py
 ```
 
 ## What each file does
@@ -43,11 +45,14 @@ python scripts/run_value_model.py --data-dir data/challenge
 | `press/metrics.py` | Team, player, and pressing-chain tables; baseline press net score. |
 | `press/value.py` | Possession value model V (shot for minus shot against in 10 s) and drift model, out-of-fold by match. |
 | `press/press_value.py` | Press value per engagement, expected press value (xPV) model, team/player value tables. |
+| `press/decisions.py` | Decision rules by situation, reliability (ICC + permutation test), position adjustment, empirical-Bayes player rankings. |
 | `press/viz.py` | All figures (quadrant, press snapshot, value surface, calibration, decision vs. execution, xPV drivers, value by outcome). |
 | `scripts/fetch_opendata.py` | Download the public opendata sample. |
 | `scripts/fetch_skillcorner_api.py` | Download challenge data via the SkillCorner API (verify params on first run). |
 | `scripts/run_pipeline.py` | Run the v0 descriptive pipeline end to end. |
 | `scripts/run_value_model.py` | Train the value models and value every press. |
+| `scripts/run_decision_analysis.py` | Decision analysis on the valued presses. |
+| `docs/report_outline.md` | Working outline of the 3000-word report. |
 
 ## Method (v0 baseline)
 
@@ -96,6 +101,20 @@ drift model R^2 0.24; xPV R^2 0.11 (most press outcome is execution and luck,
 as expected). Mean PV by SkillCorner outcome label: forced backward +2.9,
 regain +1.2, beaten -4.9 (x100), so the learned value agrees with independent
 labels it was not trained on.
+
+## Decision analysis (`run_decision_analysis.py`)
+
+- **Decision rules:** mean xPV by phase of play, third, press type, distance to
+  the carrier, teammates nearby, cover behind, and carrier xLoss.
+- **Is it a skill?** Intraclass correlation (ICC) of team-match and
+  player-match means with permutation p-values. On the sample, raw player
+  decision quality looks repeatable (ICC 0.35) but nearly all of that is
+  position (centre-backs press in lower-value situations than forwards).
+  Position-adjusted ICC is 0.06 (not significant); execution ICC is ~0. So
+  player decision quality is judged *within position*, and the full season is
+  needed to test whether it is a skill.
+- **Rankings:** empirical-Bayes shrinkage toward the mean so small samples do
+  not top the table.
 
 ## Next steps
 
