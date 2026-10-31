@@ -1,0 +1,8 @@
+# Never commit SkillCorner data (challenge terms forbid sharing it) or derived outputs.
+data/
+cache/
+outputs/
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

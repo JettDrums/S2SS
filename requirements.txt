@@ -1,0 +1,7 @@
+numpy>=1.26
+pandas>=2.1
+scipy>=1.11
+matplotlib>=3.8
+mplsoccer>=1.2
+pyarrow>=14
+skillcorner>=2.2  # only needed for scripts/fetch_skillcorner_api.py
