@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 from mplsoccer import Pitch  # noqa: E402
 from scipy.spatial import cKDTree  # noqa: E402
 
@@ -58,4 +59,89 @@ def press_snapshot(fi, eng_row, match, frames_after, path):
                  f"on {eng_row.player_in_possession_name} (blue = pressing team, defends left goal; gold = presser; red shading = space held by team in possession)",
                  fontsize=10)
     fig.savefig(path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+def value_surface(states, length, width, path):
+    """Average out-of-fold V by ball location, team in possession attacking right."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    pitch = Pitch(pitch_type="skillcorner", pitch_length=length, pitch_width=width, line_color="#555")
+    pitch.draw(ax=ax)
+    # state features store |y|; mirror to show a symmetric surface
+    s = states[["ball_x", "ball_y_abs", "V"]].dropna()
+    xs = np.concatenate([s.ball_x, s.ball_x])
+    ys = np.concatenate([s.ball_y_abs, -s.ball_y_abs])
+    vs = np.concatenate([s.V, s.V])
+    stat = pitch.bin_statistic(xs, ys, vs, statistic="mean", bins=(21, 14))
+    hm = pitch.heatmap(stat, ax=ax, cmap="RdBu_r", vmin=-0.3, vmax=0.3, edgecolors="none")
+    fig.colorbar(hm, ax=ax, shrink=0.8, label="V = P(shot for) - P(shot against), next 10 s")
+    ax.set_title("Possession value by ball location (team in possession attacks right)")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def calibration(states, path, bins=10):
+    fig, ax = plt.subplots(figsize=(5, 5))
+    for label, color in (("shot_for", "#3b6ea5"), ("shot_against", "#c0392b")):
+        p, y = states[f"p_{label}"], states[label]
+        q = pd.qcut(p, bins, duplicates="drop")
+        g = pd.DataFrame({"p": p, "y": y}).groupby(q, observed=True).mean()
+        ax.plot(g.p, g.y, "o-", color=color, label=label.replace("_", " "))
+    m = max(states.p_shot_for.max(), states.p_shot_against.max())
+    ax.plot([0, m], [0, m], "k--", lw=0.8)
+    ax.set_xlabel("Predicted probability (out-of-fold)")
+    ax.set_ylabel("Observed frequency")
+    ax.set_title("Possession value model calibration")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def decision_execution(teams, path):
+    """Decision quality (xPV) vs. execution (PV - xPV) per team."""
+    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+    sc = ax.scatter(teams.decision_xpv * 100, teams.execution * 100, s=teams.presses / 6,
+                    c=teams.pv_per30_otip, cmap="RdBu", edgecolors="k")
+    for r in teams.itertuples():
+        ax.annotate(r.team, (r.decision_xpv * 100, r.execution * 100), xytext=(5, 5),
+                    textcoords="offset points", fontsize=8)
+    ax.axhline(0, color="grey", lw=0.8, ls="--")
+    ax.axvline(teams.decision_xpv.mean() * 100, color="grey", lw=0.8, ls="--")
+    fig.colorbar(sc, ax=ax, label="Press value per 30 min out of possession")
+    ax.set_xlabel("Decision quality: mean expected press value (xPV, x100)")
+    ax.set_ylabel("Execution: mean (PV - xPV) (x100)")
+    ax.margins(0.15)
+    ax.set_title("Pressing decisions vs. execution (bubble size = presses)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def importance(imp, path, top=12):
+    d = imp.head(top).iloc[::-1]
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    ax.barh(d.feature, d.r2_drop, color="#3b6ea5")
+    ax.set_xlabel("Drop in out-of-fold R² when shuffled")
+    ax.set_title("What drives expected press value (xPV)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def value_by_outcome(eng, path):
+    """Validation: press value should be high for regains and low when the presser is beaten."""
+    d = eng.dropna(subset=["press_value"])
+    groups = {"Regain": d.regain, "Disruption": d.disruption, "Forced backward": d.forced_backward,
+              "No listed outcome": ~(d.success | d.beaten), "Beaten": d.beaten}
+    means = {k: d.press_value[m].mean() * 100 for k, m in groups.items()}
+    ns = {k: int(m.sum()) for k, m in groups.items()}
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    colors = ["#3b6ea5" if v >= 0 else "#c0392b" for v in means.values()]
+    ax.bar([f"{k}\n(n={ns[k]})" for k in means], list(means.values()), color=colors)
+    ax.axhline(0, color="k", lw=0.8)
+    ax.set_ylabel("Mean press value (x100)")
+    ax.set_title("Press value by SkillCorner outcome label")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
     plt.close(fig)

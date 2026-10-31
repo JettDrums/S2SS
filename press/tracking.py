@@ -25,6 +25,30 @@ def _parse_jsonl(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["frame", "period", "object_id", "x", "y", "is_detected"])
 
 
+def _parse_frames(path: Path) -> pd.DataFrame:
+    """One row per frame with player data: period, possession group, ball position."""
+    rows = []
+    with open(path) as f:
+        for line in f:
+            fr = json.loads(line)
+            if not fr["player_data"]:
+                continue
+            b = fr["ball_data"] or {}
+            rows.append((fr["frame"], fr["period"], (fr["possession"] or {}).get("group"), b.get("x"), b.get("y")))
+    return pd.DataFrame(rows, columns=["frame", "period", "possession_group", "ball_x", "ball_y"])
+
+
+def load_frames(data_dir: Path, match_id: int, cache_dir: Path) -> pd.DataFrame:
+    """Frame-level table (cached). possession_group is 'home team', 'away team' or None."""
+    cache = Path(cache_dir) / f"{match_id}_frames.parquet"
+    if cache.exists():
+        return pd.read_parquet(cache)
+    df = _parse_frames(Path(data_dir) / str(match_id) / f"{match_id}_tracking_extrapolated.jsonl")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(cache, index=False)
+    return df
+
+
 def load_tracking(data_dir: Path, match_id: int, cache_dir: Path) -> pd.DataFrame:
     """Long-format tracking (one row per object per frame). Ball has object_id == -1."""
     cache = Path(cache_dir) / f"{match_id}_tracking.parquet"

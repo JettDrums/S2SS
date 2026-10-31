@@ -15,5 +15,7 @@ OUTPUT_DIR = Path(os.environ.get("PRESS_OUTPUT_DIR", ROOT / "outputs"))
 FPS = 10
 # How long after an engagement ends we measure the space it left behind.
 SPACE_LAG_FRAMES = 2 * FPS
+# Fixed horizon over which a press is valued, measured from engagement start.
+PRESS_HORIZON_FRAMES = 5 * FPS
 # Frames with fewer tracked players than this are skipped for spatial metrics.
 MIN_PLAYERS_TRACKED = 16
