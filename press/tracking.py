@@ -1,4 +1,4 @@
-"""Tracking data: parse SkillCorner jsonl into arrays, cached as parquet."""
+"""Tracking data: parse SkillCorner tracking (JSON lines or JSON array) into arrays, cached as parquet."""
 import json
 from pathlib import Path
 
@@ -8,33 +8,42 @@ import pandas as pd
 BALL_ID = -1
 
 
+def iter_frames(path: Path):
+    """Yield frame dicts from either JSON-lines (opendata) or one JSON array (API download)."""
+    with open(path) as f:
+        head = f.read(64).lstrip()
+        f.seek(0)
+        if head.startswith("["):
+            yield from json.load(f)
+        else:
+            for line in f:
+                if line.strip():
+                    yield json.loads(line)
+
+
 def _parse_jsonl(path: Path) -> pd.DataFrame:
     rows = []
-    with open(path) as f:
-        for line in f:
-            fr = json.loads(line)
-            players = fr["player_data"]
-            if not players:
-                continue
-            frame, period = fr["frame"], fr["period"]
-            for p in players:
-                rows.append((frame, period, p["player_id"], p["x"], p["y"], p["is_detected"]))
-            b = fr["ball_data"]
-            if b and b.get("x") is not None:
-                rows.append((frame, period, BALL_ID, b["x"], b["y"], b["is_detected"]))
+    for fr in iter_frames(path):
+        players = fr["player_data"]
+        if not players:
+            continue
+        frame, period = fr["frame"], fr["period"]
+        for p in players:
+            rows.append((frame, period, p["player_id"], p["x"], p["y"], p["is_detected"]))
+        b = fr["ball_data"]
+        if b and b.get("x") is not None:
+            rows.append((frame, period, BALL_ID, b["x"], b["y"], b["is_detected"]))
     return pd.DataFrame(rows, columns=["frame", "period", "object_id", "x", "y", "is_detected"])
 
 
 def _parse_frames(path: Path) -> pd.DataFrame:
     """One row per frame with player data: period, possession group, ball position."""
     rows = []
-    with open(path) as f:
-        for line in f:
-            fr = json.loads(line)
-            if not fr["player_data"]:
-                continue
-            b = fr["ball_data"] or {}
-            rows.append((fr["frame"], fr["period"], (fr["possession"] or {}).get("group"), b.get("x"), b.get("y")))
+    for fr in iter_frames(path):
+        if not fr["player_data"]:
+            continue
+        b = fr["ball_data"] or {}
+        rows.append((fr["frame"], fr["period"], (fr["possession"] or {}).get("group"), b.get("x"), b.get("y")))
     return pd.DataFrame(rows, columns=["frame", "period", "possession_group", "ball_x", "ball_y"])
 
 
@@ -43,10 +52,26 @@ def load_frames(data_dir: Path, match_id: int, cache_dir: Path) -> pd.DataFrame:
     cache = Path(cache_dir) / f"{match_id}_frames.parquet"
     if cache.exists():
         return pd.read_parquet(cache)
-    df = _parse_frames(Path(data_dir) / str(match_id) / f"{match_id}_tracking_extrapolated.jsonl")
+    df = _parse_frames(raw_path(data_dir, match_id))
     cache.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(cache, index=False)
     return df
+
+
+def raw_path(data_dir: Path, match_id: int) -> Path:
+    return Path(data_dir) / str(match_id) / f"{match_id}_tracking_extrapolated.jsonl"
+
+
+def has_tracking(data_dir: Path, match_id: int, cache_dir: Path) -> bool:
+    """True if raw tracking or both parsed caches exist (raw files may be deleted after caching)."""
+    cached = all((Path(cache_dir) / f"{match_id}_{k}.parquet").exists() for k in ("tracking", "frames"))
+    return cached or raw_path(data_dir, match_id).exists()
+
+
+def build_caches(data_dir: Path, match_id: int, cache_dir: Path) -> None:
+    """Parse raw tracking once into both parquet caches."""
+    load_tracking(data_dir, match_id, cache_dir)
+    load_frames(data_dir, match_id, cache_dir)
 
 
 def load_tracking(data_dir: Path, match_id: int, cache_dir: Path) -> pd.DataFrame:
@@ -54,7 +79,7 @@ def load_tracking(data_dir: Path, match_id: int, cache_dir: Path) -> pd.DataFram
     cache = Path(cache_dir) / f"{match_id}_tracking.parquet"
     if cache.exists():
         return pd.read_parquet(cache)
-    df = _parse_jsonl(Path(data_dir) / str(match_id) / f"{match_id}_tracking_extrapolated.jsonl")
+    df = _parse_jsonl(raw_path(data_dir, match_id))
     cache.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(cache, index=False)
     return df

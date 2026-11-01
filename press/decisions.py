@@ -7,12 +7,15 @@ import numpy as np
 import pandas as pd
 
 from .metrics import PRESS_SUBTYPES
+from .press_value import press_kind
 
 # Situational factors a coach can act on, binned for readable decision rules.
+# All factors are known when the press starts (no hindsight-based SkillCorner labels).
 FACTORS = {
-    "phase": ("team_out_of_possession_phase_type", None),
+    "seconds_since_turnover": ("secs_since_turnover", [0, 3, 6, 10, 20, 1e6]),
+    "block_height_m": ("block_height", [-60, -25, -15, -5, 60]),
     "third": ("third_start", None),
-    "press_type": ("event_subtype", None),
+    "press_kind": ("press_kind", None),
     "distance_to_carrier_m": ("interplayer_distance_start", [0, 3, 5, 7, 9, 11]),
     "teammates_within_10m": ("defenders_within_10m", [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 99]),
     "cover_behind_20m": ("cover_behind_20m", [-0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 99]),
@@ -28,6 +31,7 @@ def valued_presses(eng: pd.DataFrame) -> pd.DataFrame:
     """
     p = eng[eng.event_subtype.isin(PRESS_SUBTYPES) & eng.xPV.notna()].copy()
     p["xpv_vs_position"] = p.xPV - p.groupby("player_position").xPV.transform("mean")
+    p["press_kind"] = press_kind(p.event_subtype)
     return p
 
 
@@ -128,9 +132,8 @@ def team_profiles(p: pd.DataFrame) -> pd.DataFrame:
         presses=("xPV", "size"), decision_xpv=("xPV", "mean"), execution=("execution", "mean"),
         good_decision_share=("xPV", lambda s: (s > 0).mean()),
         high_press_share=("third_start", lambda s: s.eq("attacking_third").mean()),
-        transition_press_share=("team_out_of_possession_phase_type",
-                                lambda s: s.isin(["defending_transition", "defending_quick_break",
-                                                  "defending_direct"]).mean()),
+        transition_press_share=("secs_since_turnover", lambda s: (s < 6).mean()),
+        mean_block_height=("block_height", "mean"),
         mean_cover_behind=("cover_behind_20m", "mean"),
         mean_teammates_within_10m=("defenders_within_10m", "mean"),
     )

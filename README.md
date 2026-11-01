@@ -21,12 +21,12 @@ python scripts/run_value_model.py          # learned press value model into outp
 python scripts/run_decision_analysis.py    # decision rules, reliability, rankings into outputs/value/decisions/
 ```
 
-Challenge data (once credentials arrive):
+Challenge data (credentials from the organizers' email; never commit them):
 
 ```bash
 export SKILLCORNER_USERNAME=...  SKILLCORNER_PASSWORD=...
 python scripts/fetch_skillcorner_api.py --list-editions
-python scripts/fetch_skillcorner_api.py --edition <NWSL_2025_ID> --edition <FAWSL_2024_25_ID> --limit 2   # test first
+python scripts/fetch_skillcorner_api.py --edition 1093 --compact   # NWSL 2025: 189 matches, ~4 MB each after compaction
 python scripts/run_pipeline.py --data-dir data/challenge
 python scripts/run_value_model.py --data-dir data/challenge
 python scripts/run_decision_analysis.py
@@ -87,8 +87,14 @@ one unit: **net probability of a shot in the next 10 s**.
    view over 5 s from engagement start (own V if they regained the ball,
    minus opponent's V otherwise), minus the expected drift.
 4. **Expected press value (xPV).** Gradient-boosted regressor predicting PV from
-   the situation before the press (location, distance to carrier, support,
-   cover, space, phase of play, press type, game state). Splits pressing into
+   information available when the press starts: location, distance to carrier,
+   support, cover, space, carrier xLoss, team shape (block height, last-line
+   depth, team length), seconds since the turnover, whether a pressing chain is
+   already running, press kind, game state. Two SkillCorner labels are
+   deliberately excluded because they use hindsight (per the Dynamic Events
+   spec): the pressing/pressure split depends on whether the *next* possession
+   is pressed, and phase of play is assigned at the end of the possession.
+   Including them inflated xPV R^2 from 0.05 to 0.11. Splits pressing into
    **decision quality** (mean xPV: pressing at good moments) and **execution**
    (mean PV - xPV: doing better than expected once pressing).
 
@@ -97,7 +103,7 @@ a model trained on it. Team values come with bootstrap 95% CIs.
 
 **Validation on the sample (20 matches, ~13.6k presses):**
 V model AUC 0.85 (shot for) / 0.88 (shot against), Brier better than base rate;
-drift model R^2 0.24; xPV R^2 0.11 (most press outcome is execution and luck,
+drift model R^2 0.24; xPV R^2 0.05 (most press outcome is execution and luck,
 as expected). Mean PV by SkillCorner outcome label: forced backward +2.9,
 regain +1.2, beaten -4.9 (x100), so the learned value agrees with independent
 labels it was not trained on.

@@ -23,18 +23,45 @@ from sklearn.model_selection import GroupKFold
 
 from . import config
 from .metrics import PRESS_SUBTYPES
+from .space import to_event_frame
 from .value import MatchContext, ValueModel, nearest_possessor
 
+# xPV may only use information available when the press starts. Two SkillCorner
+# labels are excluded because they are assigned with hindsight (see the Dynamic
+# Events spec): "pressing" vs "pressure" depends on whether the *next*
+# possession is also pressed, and phase of play is labelled at the end of the
+# possession ("chaotic" = turned out short and contested). They are replaced by
+# tracking-based shape and timing features measured at engagement start.
 CONTEXT_NUM = ["x_start", "y_abs", "interplayer_distance_start", "defenders_within_5m",
                "defenders_within_10m", "cover_behind_20m", "space_start", "xloss", "V_before",
-               "simultaneous", "index_in_chain"]
-CONTEXT_CAT = ["event_subtype", "team_out_of_possession_phase_type", "game_state"]
+               "simultaneous", "chain_continuation", "block_height", "last_line_x", "team_length",
+               "secs_since_turnover"]
+CONTEXT_CAT = ["press_kind", "game_state"]
+
+
+def press_kind(subtype: pd.Series) -> pd.Series:
+    """SkillCorner subtype with the hindsight-based pressing/pressure split merged."""
+    return subtype.replace({"pressing": "forward_press", "pressure": "forward_press"})
+
+
+def shape_features(ctx: MatchContext, frame: int, pressing_team: int, ltr: bool):
+    """Pressing team's shape at a frame, in event coords (own goal at x = -L/2)."""
+    got = ctx.fi.get(int(frame))
+    if got is None:
+        return {}
+    _, xy, team = got
+    own = to_event_frame(xy[team == pressing_team], ltr)
+    if len(own) < 8:
+        return {}
+    xs = np.sort(own[:, 0])[1:]                 # drop the deepest player (goalkeeper)
+    return {"block_height": float(xs.mean()), "last_line_x": float(xs[0]),
+            "team_length": float(xs[-1] - xs[0])}
 
 
 def press_values(ctx: MatchContext, eng: pd.DataFrame, vm: ValueModel) -> pd.DataFrame:
     """Add V_before, V_after (attacking/possessing team view) and press_value to engagements."""
     horizon = config.PRESS_HORIZON_FRAMES
-    rows0, rows1, keep = [], [], []
+    rows0, rows1, keep, extra = [], [], [], []
     for r in eng.itertuples():
         pressing = int(r.team_id)
         attackers = ctx.teams[1] if pressing == ctx.teams[0] else ctx.teams[0]
@@ -47,8 +74,12 @@ def press_values(ctx: MatchContext, eng: pd.DataFrame, vm: ValueModel) -> pd.Dat
         rows0.append(f0)
         rows1.append(f1)
         keep.append((r.Index, owner1 == pressing))
+        sh = shape_features(ctx, r.frame_start, pressing, r.attacking_side == "left_to_right")
+        sh["secs_since_turnover"] = ctx.seconds_since_turnover(int(r.frame_start))
+        extra.append(sh)
     out = eng.copy()
-    for c in ("V_before", "V_after", "press_value_raw", "expected_drift", "press_value", "regained_at_end"):
+    for c in ("V_before", "V_after", "press_value_raw", "expected_drift", "press_value", "regained_at_end",
+              "block_height", "last_line_x", "team_length", "secs_since_turnover"):
         out[c] = np.nan
     if not keep:
         return out
@@ -67,6 +98,9 @@ def press_values(ctx: MatchContext, eng: pd.DataFrame, vm: ValueModel) -> pd.Dat
     out.loc[idx, "press_value_raw"] = p1 - p0
     out.loc[idx, "expected_drift"] = expected
     out.loc[idx, "press_value"] = (p1 - p0) - expected
+    ex = pd.DataFrame(extra, index=idx)
+    for c in ex.columns:
+        out.loc[idx, c] = ex[c]
     return out
 
 
@@ -76,13 +110,15 @@ def _design(eng: pd.DataFrame) -> pd.DataFrame:
     X["y_abs"] = eng.y_start.abs()
     X["interplayer_distance_start"] = eng.interplayer_distance_start
     for c in ("defenders_within_5m", "defenders_within_10m", "cover_behind_20m", "space_start",
-              "xloss", "V_before"):
+              "xloss", "V_before", "block_height", "last_line_x", "team_length", "secs_since_turnover"):
         X[c] = eng[c]
     X["simultaneous"] = eng.simultaneous_defensive_engagement_same_target.fillna(False).astype(float)
-    X["index_in_chain"] = eng.index_in_pressing_chain.fillna(0)
-    for c in CONTEXT_CAT:
-        X[c] = eng[c].astype("category")
-    return X
+    # Already-running chain (the previous possession was pressed) is known at press start;
+    # the first engagement of a chain is only labelled as such with hindsight, so it counts as 0.
+    X["chain_continuation"] = (eng.index_in_pressing_chain.fillna(0) >= 2).astype(float)
+    X["press_kind"] = press_kind(eng.event_subtype).astype("category")
+    X["game_state"] = eng.game_state.astype("category")
+    return X[CONTEXT_NUM + CONTEXT_CAT]
 
 
 def fit_expected(eng: pd.DataFrame, n_folds: int = 5, seed: int = 0):

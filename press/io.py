@@ -6,9 +6,10 @@ import pandas as pd
 
 
 def match_ids(data_dir: Path) -> list[int]:
-    """All match ids in data_dir that have a match json."""
+    """All match ids in data_dir that have both a match json and dynamic events."""
     return sorted(int(p.name) for p in Path(data_dir).iterdir()
-                  if p.is_dir() and (p / f"{p.name}_match.json").exists())
+                  if p.is_dir() and (p / f"{p.name}_match.json").exists()
+                  and (p / f"{p.name}_dynamic_events.csv").exists())
 
 
 def load_match(data_dir: Path, match_id: int) -> dict:

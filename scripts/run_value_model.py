@@ -37,7 +37,7 @@ def main():
     data_dir, out = Path(args.data_dir), Path(args.out)
     (out / "figures").mkdir(parents=True, exist_ok=True)
     mids = [m for m in io.match_ids(data_dir)[: args.limit]
-            if (data_dir / str(m) / f"{m}_tracking_extrapolated.jsonl").exists()]
+            if tracking.has_tracking(data_dir, m, config.CACHE_DIR)]
 
     print("Pass 1: value-model training states")
     states = []

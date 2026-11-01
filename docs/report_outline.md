@@ -40,10 +40,13 @@ Status key: [built] = implemented and runs on the opendata sample;
 
 ## 4. Results (~1200 words)
 4.1 When is pressing a good decision? (decision_rules, decision_map) [built; confirm on full data]
-   - Sample patterns to test: pressing in defensive transition / against direct
-     play is the costliest decision; chaotic phases and high-block pressing
-     the best; adding a 4th-5th presser near the ball lowers value
-     (over-commitment); engaging from 9-11 m beats arriving late at 0-3 m.
+   - Only pre-press information (no hindsight labels; see method).
+   - Sample patterns to test: pressing within 3 s of a turnover is the
+     costliest timing; value rises steadily with cover behind the press and
+     falls steadily with teammates already near the ball (over-commitment);
+     engaging from 9-11 m beats arriving late at 0-3 m.
+   - Methods point worth a paragraph: SkillCorner's pressing/pressure split and
+     phase labels use hindsight; including them doubles apparent decision R^2.
 4.2 Teams: decision vs. execution quadrant + team profiles (style mix). [full data]
 4.3 Is it a skill? Reliability table. Sample result: raw player decision
     quality looks highly repeatable (ICC 0.35) but almost all of it is

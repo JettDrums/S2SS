@@ -30,8 +30,7 @@ def main():
     for mid in io.match_ids(data_dir)[: args.limit]:
         match = io.load_match(data_dir, mid)
         eng = episodes.engagements(io.load_events(data_dir, mid))
-        trk_file = data_dir / str(mid) / f"{mid}_tracking_extrapolated.jsonl"
-        if not args.no_tracking and trk_file.exists():
+        if not args.no_tracking and tracking.has_tracking(data_dir, mid, config.CACHE_DIR):
             trk = tracking.load_tracking(data_dir, mid, config.CACHE_DIR)
             eng = features.add_spatial_features(eng, trk, match)
             if snapshot is None:

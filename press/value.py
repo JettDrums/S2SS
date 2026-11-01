@@ -80,6 +80,14 @@ class MatchContext:
         self.dirs = team_directions(events)
         self.poss = possession_series(frames, match)
         self.period = frames.set_index("frame").period
+        # Frames where possession changed hands, for "time since turnover".
+        known = self.poss.dropna()
+        change = known.ne(known.shift())
+        self._change_frames = known.index[change.to_numpy()].to_numpy()
+
+    def seconds_since_turnover(self, frame: int) -> float:
+        i = np.searchsorted(self._change_frames, frame, side="right") - 1
+        return np.nan if i < 0 else (frame - self._change_frames[i]) / config.FPS
 
     def features(self, frame: int, possessor: int):
         got = self.fi.get(int(frame))
