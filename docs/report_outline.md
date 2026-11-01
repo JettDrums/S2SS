@@ -48,9 +48,9 @@ Status key: [built] = implemented and runs on the opendata sample;
    - Methods point worth a paragraph: SkillCorner's pressing/pressure split and
      phase labels use hindsight; including them doubles apparent decision R^2.
 4.2 Teams: decision vs. execution quadrant + team profiles (style mix). [full data]
-4.3 Is it a skill? Reliability table. Sample result: raw player decision
-    quality looks highly repeatable (ICC 0.35) but almost all of it is
-    position; position-adjusted ICC 0.06 (n.s.). Execution ICC ~0. [full data]
+4.3 Is it a skill? Reliability table. On the A-League sample, position-adjusted
+    player decision quality was not significant; on the full NWSL season it is
+    (see outputs/nwsl/decisions/reliability.csv). Lead with this. [built, NWSL run]
 4.4 Player rankings within position, shrunk. [full data]
 4.5 NWSL vs. WSL comparison of pressing decisions. [full data, to build]
 

@@ -101,7 +101,7 @@ def calibration(states, path, bins=10):
 def decision_execution(teams, path):
     """Decision quality (xPV) vs. execution (PV - xPV) per team."""
     fig, ax = plt.subplots(figsize=(7.5, 5.5))
-    sc = ax.scatter(teams.decision_xpv * 100, teams.execution * 100, s=teams.presses / 6,
+    sc = ax.scatter(teams.decision_xpv * 100, teams.execution * 100, s=40 + 260 * teams.presses / teams.presses.max(),
                     c=teams.pv_per30_otip, cmap="RdBu", edgecolors="k")
     for r in teams.itertuples():
         ax.annotate(r.team, (r.decision_xpv * 100, r.execution * 100), xytext=(5, 5),
