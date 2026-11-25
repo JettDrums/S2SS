@@ -66,7 +66,32 @@ def possession_series(frames: pd.DataFrame, match: dict, max_gap_frames: int = 2
 
 def shot_frames(events: pd.DataFrame) -> pd.DataFrame:
     pp = events[(events.event_type == "player_possession") & (events.end_type == "shot")]
-    return pp[["team_id", "period", "frame_end"]].rename(columns={"frame_end": "frame"})
+    return pp[["match_id", "team_id", "period", "frame_end"]].rename(columns={"frame_end": "frame"})
+
+
+def realized_shots(rows: pd.DataFrame, shots: pd.DataFrame, horizon: int):
+    """For rows with (match_id, frame, team_id): did that team / the other team shoot in (frame, frame + horizon]?
+
+    Press value and drift credit shots taken inside the horizon. Without this, a
+    possession that ends in a shot looks like a collapse in value (after a shot the
+    ball is dead or with the keeper), so dangerous attacks that *succeed* would be
+    scored as if they fizzled.
+    """
+    own = np.zeros(len(rows), bool)
+    opp = np.zeros(len(rows), bool)
+    pos = {k: i for i, k in enumerate(rows.index)}
+    for mid, g in rows.groupby("match_id"):
+        sm = shots[shots.match_id == mid]
+        for team, sf in sm.groupby("team_id"):
+            fr = np.sort(sf.frame.to_numpy())
+            # any shot in (frame, frame + horizon]
+            hit = np.searchsorted(fr, g.frame.to_numpy() + horizon, side="right") > \
+                np.searchsorted(fr, g.frame.to_numpy(), side="right")
+            idx = np.array([pos[i] for i in g.index])
+            mine = (g.team_id.to_numpy() == team)
+            own[idx[mine & hit]] = True
+            opp[idx[~mine & hit]] = True
+    return own, opp
 
 
 class MatchContext:
@@ -78,6 +103,7 @@ class MatchContext:
         self.teams = (match["home_team"]["id"], match["away_team"]["id"])
         self.fi = FrameIndex(tracking, {p["id"]: p["team_id"] for p in match["players"]})
         self.dirs = team_directions(events)
+        self.shots = shot_frames(events)
         self.poss = possession_series(frames, match)
         self.period = frames.set_index("frame").period
         # Frames where possession changed hands, for "time since turnover".
@@ -162,8 +188,10 @@ class ValueModel:
                   f"Brier {brier_score_loss(y, p):.4f} (climatology {brier_score_loss(y, base):.4f})")
         return oof
 
-    def fit_drift(self, states: pd.DataFrame, horizon: int = config.PRESS_HORIZON_FRAMES) -> pd.DataFrame:
-        """Fit E[V(t + horizon) - V(t) | state at t], from the possessing team's view at t.
+    def fit_drift(self, states: pd.DataFrame, shots: pd.DataFrame,
+                  horizon: int = config.PRESS_HORIZON_FRAMES) -> pd.DataFrame:
+        """Fit E[outcome(t, t + horizon) - V(t) | state at t], from the possessing team's view at t,
+        where outcome = V(t + horizon) + shots taken - shots conceded inside the horizon.
 
         This is how a possession normally evolves, pressed or not. Press value is
         measured against it, so presses are not penalised for ordinary forward
@@ -173,7 +201,8 @@ class ValueModel:
         fut["frame"] -= horizon
         d = states.merge(fut, on=["match_id", "frame"], how="inner", suffixes=("", "_future"))
         same = d.team_id == d.team_id_future
-        d["drift"] = np.where(same, d.V_future, -d.V_future) - d.V
+        own, opp = realized_shots(d, shots, horizon)
+        d["drift"] = np.where(same, d.V_future, -d.V_future) + own - opp - d.V
         X, y = d[STATE_FEATURES], d.drift.to_numpy()
         oof = np.full(len(d), np.nan)
         for fold in range(len(self.models)):

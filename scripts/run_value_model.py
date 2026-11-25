@@ -33,15 +33,19 @@ def main():
     ap.add_argument("--out", default=str(config.OUTPUT_DIR / "value"))
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--min-player-presses", type=int, default=30)
+    ap.add_argument("--horizon", type=int, default=config.PRESS_HORIZON_FRAMES // config.FPS,
+                    help="seconds over which each press is valued (default 5)")
     args = ap.parse_args()
+    config.PRESS_HORIZON_FRAMES = args.horizon * config.FPS
     data_dir, out = Path(args.data_dir), Path(args.out)
     (out / "figures").mkdir(parents=True, exist_ok=True)
     mids = [m for m in io.match_ids(data_dir)[: args.limit]
             if tracking.has_tracking(data_dir, m, config.CACHE_DIR)]
 
     print("Pass 1: value-model training states")
-    states = []
+    states, shots = [], []
     for mid in mids:
+        shots.append(value.shot_frames(io.load_events(data_dir, mid)))
         cache = config.CACHE_DIR / f"{mid}_states.parquet"
         if cache.exists():
             s = pd.read_parquet(cache)
@@ -52,11 +56,12 @@ def main():
         print(f"  {mid}: {len(s)} states")
         states.append(s)
     states = pd.concat(states, ignore_index=True)
+    shots = pd.concat(shots, ignore_index=True)
 
     print("Fitting possession value model (out-of-fold by match)")
     vm = value.ValueModel()
     states = vm.fit(states)
-    vm.fit_drift(states)
+    vm.fit_drift(states, shots, args.horizon * config.FPS)
 
     print("Pass 2: press value per engagement")
     all_eng, all_teams, all_players, pitch = [], [], [], None

@@ -1,9 +1,10 @@
 """Learned press value: what each press is worth, and how much of that was a good decision.
 
-press_value_raw: change in V from the pressing team's view over a fixed 5 s from
-engagement start. If the pressing team has the ball at the end (a regain), its
-own V counts positively; otherwise the opponent's V counts negatively. Units:
-net probability of a shot in the next 10 s.
+press_value_raw: change in value from the pressing team's view over a fixed 5 s
+from engagement start. Value at the end is the pressing team's own V if they
+have the ball (a regain), otherwise minus the opponent's V, plus 1 for a shot
+the pressing team takes inside the 5 s and minus 1 for a shot it concedes.
+Units: net probability of a shot (10 s horizon).
 
 press_value (PV): press_value_raw minus the change expected from that starting
 state anyway (the drift model in value.py). Positive PV = the possession went
@@ -24,7 +25,7 @@ from sklearn.model_selection import GroupKFold
 from . import config
 from .metrics import PRESS_SUBTYPES
 from .space import to_event_frame
-from .value import MatchContext, ValueModel, nearest_possessor
+from .value import MatchContext, ValueModel, nearest_possessor, realized_shots
 
 # xPV may only use information available when the press starts. Two SkillCorner
 # labels are excluded because they are assigned with hindsight (see the Dynamic
@@ -79,6 +80,7 @@ def press_values(ctx: MatchContext, eng: pd.DataFrame, vm: ValueModel) -> pd.Dat
         extra.append(sh)
     out = eng.copy()
     for c in ("V_before", "V_after", "press_value_raw", "expected_drift", "press_value", "regained_at_end",
+              "shot_for_window", "shot_against_window",
               "block_height", "last_line_x", "team_length", "secs_since_turnover"):
         out[c] = np.nan
     if not keep:
@@ -92,9 +94,14 @@ def press_values(ctx: MatchContext, eng: pd.DataFrame, vm: ValueModel) -> pd.Dat
     expected = -vm.predict_drift(ctx.match["id"], f0)
     p0 = -v0                                  # pressing team's value before: opponent has the ball
     p1 = np.where(regained, v1, -v1)          # after: own value if regained, else minus opponent's
+    sub = eng.loc[idx, ["match_id", "frame_start", "team_id"]].rename(columns={"frame_start": "frame"})
+    shot_for, shot_against = realized_shots(sub, ctx.shots, horizon)
+    p1 = p1 + shot_for - shot_against
     out.loc[idx, "V_before"] = v0
     out.loc[idx, "V_after"] = v1
     out.loc[idx, "regained_at_end"] = regained.astype(float)
+    out.loc[idx, "shot_for_window"] = shot_for.astype(float)
+    out.loc[idx, "shot_against_window"] = shot_against.astype(float)
     out.loc[idx, "press_value_raw"] = p1 - p0
     out.loc[idx, "expected_drift"] = expected
     out.loc[idx, "press_value"] = (p1 - p0) - expected

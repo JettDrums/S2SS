@@ -5,6 +5,9 @@ Writes to outputs/value/decisions/:
   reliability.csv               ICC of decision vs execution at team and player level
   team_profiles.csv             team decision quality, execution, and style mix
   player_rankings.csv           shrunk (empirical-Bayes) player decision/execution/value
+  team_decision_decomposition.csv  team decision gap split into situation mix vs. within-situation
+  team_situation_mix.csv        team vs. league share of presses in each situation
+  team_recommendations.csv      per team, the over-used situations that cost the most
   figures/decision_rules.png, figures/decision_map.png
 
 Usage: python scripts/run_decision_analysis.py [--value-dir outputs/value]
@@ -34,6 +37,11 @@ def main():
     rel = decisions.reliability_table(p)
     prof = decisions.team_profiles(p)
     players = decisions.player_rankings(p, args.min_player_presses)
+    mix, levels = decisions.team_mix_decomposition(p)
+    recs = decisions.recommendations(levels)
+    mix.to_csv(out / "team_decision_decomposition.csv", index=False)
+    levels.to_csv(out / "team_situation_mix.csv", index=False)
+    recs.to_csv(out / "team_recommendations.csv", index=False)
     rules.to_csv(out / "decision_rules.csv", index=False)
     rel.to_csv(out / "reliability.csv", index=False)
     prof.to_csv(out / "team_profiles.csv", index=False)
@@ -50,6 +58,11 @@ def main():
     print(r.round(2).to_string(index=False))
     print("\nTeam profiles:")
     print(prof.round(4).to_string(index=False))
+    print("\nRecommendations (over-used costly situations, mix contribution x100):")
+    r2 = recs.copy()
+    r2[["team_share", "league_share"]] = r2[["team_share", "league_share"]].round(3)
+    r2[["league_xpv", "mix_contribution"]] *= 100
+    print(r2.round(3).to_string(index=False))
     print("\nTop 10 players (shrunk press value):")
     print(players.head(10).round(4).to_string(index=False))
     print(f"\nWrote outputs to {out}")

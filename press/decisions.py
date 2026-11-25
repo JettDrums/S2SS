@@ -138,3 +138,45 @@ def team_profiles(p: pd.DataFrame) -> pd.DataFrame:
         mean_teammates_within_10m=("defenders_within_10m", "mean"),
     )
     return t.sort_values("decision_xpv", ascending=False).reset_index()
+
+
+def team_mix_decomposition(p: pd.DataFrame, factors=("seconds_since_turnover", "teammates_within_10m",
+                                                    "distance_to_carrier_m", "press_kind", "block_height_m")):
+    """Why does a team's decision quality differ from the league? One factor at a time:
+
+        team mean xPV - league mean xPV
+            = sum_l (team share_l - league share_l) * (league xPV_l - league mean)   [mix: where they press]
+            + sum_l team share_l * (team xPV_l - league xPV_l)                       [within: how good those presses are]
+
+    The mix term says how much a team gains or loses by choosing situations
+    (e.g. pressing a lot right after turnovers). Rows with the largest negative
+    mix contributions are the recommendations: press less in those situations.
+    """
+    league_mean = p.xPV.mean()
+    rows, levels = [], []
+    for name in factors:
+        col, bins = FACTORS[name]
+        key = (pd.cut(p[col], bins) if bins else p[col]).astype(str).rename("level")
+        d = p.assign(level=key)
+        lg = d.groupby("level").xPV.agg(["mean", "size"])
+        lg["share"] = lg["size"] / lg["size"].sum()
+        for team, g in d.groupby("team_shortname"):
+            tg = g.groupby("level").xPV.agg(["mean", "size"])
+            tg["share"] = tg["size"] / tg["size"].sum()
+            j = lg.join(tg, lsuffix="_lg", rsuffix="_tm", how="left").fillna({"share_tm": 0})
+            contrib = (j.share_tm - j.share_lg) * (j.mean_lg - league_mean)
+            within = (j.share_tm * (j.mean_tm - j.mean_lg)).sum()
+            rows.append({"team": team, "factor": name, "mix": contrib.sum(), "within": within,
+                         "gap": g.xPV.mean() - league_mean})
+            for lv, r in j.iterrows():
+                levels.append({"team": team, "factor": name, "level": lv, "team_share": r.share_tm,
+                               "league_share": r.share_lg, "league_xpv": r.mean_lg,
+                               "mix_contribution": contrib[lv]})
+    return pd.DataFrame(rows), pd.DataFrame(levels)
+
+
+def recommendations(levels: pd.DataFrame, top: int = 3) -> pd.DataFrame:
+    """Per team: the situations whose over-use costs the most decision value."""
+    over = levels[(levels.team_share > levels.league_share) & (levels.mix_contribution < 0)]
+    return (over.sort_values("mix_contribution").groupby("team").head(top)
+            .sort_values(["team", "mix_contribution"]).reset_index(drop=True))

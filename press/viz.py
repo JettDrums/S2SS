@@ -28,8 +28,9 @@ def team_quadrant(teams, path):
     plt.close(fig)
 
 
-def press_snapshot(fi, eng_row, match, frames_after, path):
-    """Two panels: the frame an engagement starts and N frames after it ends.
+def press_snapshot(fi, eng_row, match, frames_after, path, from_start=False, subtitle=None):
+    """Two panels: the frame an engagement starts and N frames after it ends
+    (or after it starts, with from_start=True, matching the press value horizon).
 
     Shading shows space controlled by the team in possession (nearest-player model).
     """
@@ -39,8 +40,9 @@ def press_snapshot(fi, eng_row, match, frames_after, path):
     fig, axes = pitch.draw(nrows=1, ncols=2, figsize=(13, 4.8))
     xs, ys = np.meshgrid(np.arange(-L / 2, L / 2, 1.0) + 0.5, np.arange(-W / 2, W / 2, 1.0) + 0.5)
     cells = np.column_stack([xs.ravel(), ys.ravel()])
-    for ax, frame, title in ((axes[0], eng_row.frame_start, "Engagement starts"),
-                             (axes[1], eng_row.frame_end + frames_after, f"{frames_after / 10:.0f}s after")):
+    second = (eng_row.frame_start if from_start else eng_row.frame_end) + frames_after
+    label = f"{frames_after / 10:.0f}s after {'start' if from_start else 'end'}"
+    for ax, frame, title in ((axes[0], eng_row.frame_start, "Engagement starts"), (axes[1], second, label)):
         got = fi.get(int(frame))
         ax.set_title(title)
         if got is None:
@@ -55,9 +57,10 @@ def press_snapshot(fi, eng_row, match, frames_after, path):
         pitch.scatter(*xy[~is_def].T, ax=ax, color="#c0392b", s=60, edgecolors="k", zorder=3)
         sel = ids == eng_row.player_id
         pitch.scatter(*xy[sel].T, ax=ax, color="gold", s=140, edgecolors="k", zorder=4)
-    fig.suptitle(f"{eng_row.team_shortname} {eng_row.event_subtype}: {eng_row.player_name} "
-                 f"on {eng_row.player_in_possession_name} (blue = pressing team, defends left goal; gold = presser; red shading = space held by team in possession)",
-                 fontsize=10)
+    title = (f"{eng_row.team_shortname} {eng_row.event_subtype}: {eng_row.player_name} "
+             f"on {eng_row.player_in_possession_name} (blue = pressing team, defends left goal; "
+             f"gold = presser; red shading = space held by team in possession)")
+    fig.suptitle(title + (f"\n{subtitle}" if subtitle else ""), fontsize=10)
     fig.savefig(path, dpi=130, bbox_inches="tight")
     plt.close(fig)
 
